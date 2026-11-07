@@ -722,10 +722,28 @@ fun DiscussionsSheetDialog(
     onOpenGroup: ((Long) -> Unit)? = null,
     onPlayMusic: ((Song) -> Unit)? = null,
     isFollowing: Boolean = false,
-    onFollowToggle: (() -> Unit)? = null
+    onFollowToggle: (() -> Unit)? = null,
+    allUsers: List<User> = emptyList()
 ) {
     val coroutineScope = rememberCoroutineScope()
-    var postState by remember(post) { mutableStateOf(post) }
+    val resolvedAuthor = remember(post.author, allUsers, currentUser) {
+        val uId = if (post.userId > 0L) post.userId else post.author.id
+        val matched = allUsers.find { it.id == uId }
+            ?: if (currentUser.id == uId && currentUser.id > 0) currentUser else null
+        if (matched != null) {
+            val realName = matched.name.ifBlank { matched.username.removePrefix("@") }
+            post.author.copy(
+                id = matched.id,
+                name = if (realName.isNotBlank() && !realName.startsWith("User")) realName else post.author.name.ifBlank { realName },
+                username = matched.username.ifBlank { post.author.username },
+                profileImageUrl = matched.profileImageUrl.ifBlank { post.author.profileImageUrl },
+                isVerified = matched.isVerified || post.author.isVerified
+            )
+        } else post.author
+    }
+    var postState by remember(post, resolvedAuthor) {
+        mutableStateOf(post.copy(author = resolvedAuthor))
+    }
     var localIsFollowing by remember(post.author.id, post.author.isFollowing, isFollowing) {
         mutableStateOf(isFollowing || post.author.isFollowing)
     }
@@ -756,8 +774,13 @@ fun DiscussionsSheetDialog(
     LaunchedEffect(post.id) {
         val fetched = FeedInteractionApiService.fetchComments(post, currentUser.id)
         if (fetched.isNotEmpty() || post.comments.isEmpty()) {
-            val pending = liveComments.filter { it.id < 0 }
-            val allMerged = (fetched + pending).distinctBy { it.id }
+            val confirmed = fetched.filter { it.id > 0 }
+            val pending = liveComments.filter { it.id < 0 }.filterNot { pend ->
+                confirmed.any { conf ->
+                    conf.author.id == pend.author.id && conf.text.trim() == pend.text.trim()
+                }
+            }.distinctBy { "${it.author.id}_${it.text.trim()}" }
+            val allMerged = (confirmed + pending).distinctBy { it.id }
             liveComments = FeedInteractionApiService.organizeCommentsIntoThreads(allMerged)
         }
         isLoadingComments = false
@@ -765,8 +788,13 @@ fun DiscussionsSheetDialog(
 
     LaunchedEffect(post.comments) {
         if (post.comments.isNotEmpty()) {
-            val pending = liveComments.filter { it.id < 0 }
-            val allMerged = (post.comments + pending).distinctBy { it.id }
+            val confirmed = post.comments.filter { it.id > 0 }
+            val pending = liveComments.filter { it.id < 0 }.filterNot { pend ->
+                confirmed.any { conf ->
+                    conf.author.id == pend.author.id && conf.text.trim() == pend.text.trim()
+                }
+            }.distinctBy { "${it.author.id}_${it.text.trim()}" }
+            val allMerged = (confirmed + pending).distinctBy { it.id }
             liveComments = FeedInteractionApiService.organizeCommentsIntoThreads(allMerged)
         }
     }
@@ -914,6 +942,7 @@ fun DiscussionsSheetDialog(
                                 onOpenEvent = { onOpenEvent?.invoke(it) },
                                 onOpenGroup = { onOpenGroup?.invoke(it) },
                                 onPlayMusic = { onPlayMusic?.invoke(it) },
+                                allUsers = allUsers,
                                 hideCommentPreview = true
                             )
                         }
@@ -1055,7 +1084,9 @@ fun DiscussionsSheetDialog(
                                         onDeleteComment?.invoke(comment.id)
                                     },
                                     onMoreOptions = { selectedCommentForActions = comment },
-                                    onUserClick = { onProfileClick?.invoke(comment.author) }
+                                    onUserClick = { onProfileClick?.invoke(comment.author) },
+                                    allUsers = allUsers,
+                                    currentUser = currentUser
                                 )
                             }
                         }
@@ -1282,8 +1313,9 @@ fun DiscussionsSheetDialog(
                                         timestamp = "Just now",
                                         imageUrl = selectedImageUri?.toString()
                                     )
-                                    // New comment appears DOWN below the old ones (chronological)
-                                    liveComments = liveComments.filter { it.id != tempId } + optimistic
+                                    // Prevent adding duplicate pending comments with identical text and author
+                                    val withoutDuplicates = liveComments.filterNot { it.id < 0 && it.text.trim() == trimmedText && it.author.id == currentUser.id }
+                                    liveComments = withoutDuplicates.filter { it.id != tempId } + optimistic
                                     onAddComment(trimmedText)
                                     coroutineScope.launch {
                                         delay(100)
@@ -1382,10 +1414,28 @@ private fun CommentItemRow(
     onToggleHide: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
     onMoreOptions: (() -> Unit)? = null,
-    onUserClick: (() -> Unit)? = null
+    onUserClick: (() -> Unit)? = null,
+    allUsers: List<User> = emptyList(),
+    currentUser: User? = null
 ) {
     var showReactionDock by remember { mutableStateOf(false) }
     val currentReaction = getFacebookReaction(comment.myReaction)
+
+    val authorUser = remember(comment.author, allUsers, currentUser) {
+        val uId = if (comment.userId > 0L) comment.userId else comment.author.id
+        val matched = allUsers.find { it.id == uId }
+            ?: if (currentUser != null && currentUser.id == uId && currentUser.id > 0) currentUser else null
+        if (matched != null) {
+            val realName = matched.name.ifBlank { matched.username.removePrefix("@") }
+            comment.author.copy(
+                id = matched.id,
+                name = if (realName.isNotBlank() && !realName.startsWith("User")) realName else comment.author.name.ifBlank { realName },
+                username = matched.username.ifBlank { comment.author.username },
+                profileImageUrl = matched.profileImageUrl.ifBlank { comment.author.profileImageUrl },
+                isVerified = matched.isVerified || comment.author.isVerified
+            )
+        } else comment.author
+    }
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -1408,10 +1458,10 @@ private fun CommentItemRow(
                 }
         ) {
             FeatheredAvatar(
-                name = comment.author.name,
-                imageUrl = comment.author.profileImageUrl,
+                name = authorUser.name,
+                imageUrl = authorUser.profileImageUrl,
                 size = 36.dp,
-                username = comment.author.username,
+                username = authorUser.username,
                 onClick = onUserClick
             )
 
@@ -1437,14 +1487,14 @@ private fun CommentItemRow(
                                 modifier = Modifier.clickable { onUserClick?.invoke() }
                             ) {
                                 Text(
-                                    text = comment.author.name,
+                                    text = authorUser.name,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 14.5.sp,
+                                    fontSize = 19.sp,
                                     color = Color(0xFFF8FAFC)
                                 )
-                                if (comment.author.isVerified) {
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    VerifiedBadge(size = 14.dp)
+                                if (authorUser.isVerified) {
+                                    Spacer(modifier = Modifier.width(5.dp))
+                                    VerifiedBadge(size = 17.dp)
                                 }
                                 if (comment.isHidden) {
                                     Spacer(modifier = Modifier.width(6.dp))
@@ -1477,9 +1527,9 @@ private fun CommentItemRow(
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = comment.text,
-                            fontSize = 14.5.sp,
+                            fontSize = 20.sp,
                             color = Color(0xFFCBD5E1),
-                            lineHeight = 20.sp
+                            lineHeight = 26.sp
                         )
                     }
                 }
@@ -1630,7 +1680,9 @@ private fun CommentItemRow(
                 isExpanded = isExpanded,
                 onToggleExpand = onToggleExpand,
                 onLikeReply = onLikeReply,
-                onReplyToUser = onReplyToUser
+                onReplyToUser = onReplyToUser,
+                allUsers = allUsers,
+                currentUser = currentUser
             )
         }
     }
@@ -1642,7 +1694,9 @@ private fun CompactThreadedReplies(
     isExpanded: Boolean,
     onToggleExpand: () -> Unit,
     onLikeReply: (Comment) -> Unit,
-    onReplyToUser: (Comment, String) -> Unit
+    onReplyToUser: (Comment, String) -> Unit,
+    allUsers: List<User> = emptyList(),
+    currentUser: User? = null
 ) {
     val totalReplies = parentComment.replies.size
     if (totalReplies == 0) return
@@ -1686,7 +1740,7 @@ private fun CompactThreadedReplies(
             ) {
                 Text(
                     text = label,
-                    fontSize = 13.sp,
+                    fontSize = 19.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFFF8FAFC)
                 )
@@ -1700,7 +1754,9 @@ private fun CompactThreadedReplies(
                 isLast = true,
                 isExpanded = false,
                 onLike = { onLikeReply(latestReply) },
-                onReply = { onReplyToUser(latestReply, latestReply.author.name) }
+                onReply = { onReplyToUser(latestReply, latestReply.author.name) },
+                allUsers = allUsers,
+                currentUser = currentUser
             )
         } else {
             // Expanded: display all replies
@@ -1714,7 +1770,9 @@ private fun CompactThreadedReplies(
                     isLast = isLastRow,
                     isExpanded = isExpanded,
                     onLike = { onLikeReply(reply) },
-                    onReply = { onReplyToUser(reply, reply.author.name) }
+                    onReply = { onReplyToUser(reply, reply.author.name) },
+                    allUsers = allUsers,
+                    currentUser = currentUser
                 )
             }
 
@@ -1745,8 +1803,8 @@ private fun CompactThreadedReplies(
                 ) {
                     Text(
                         text = "Hide replies",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 19.sp,
+                        fontWeight = FontWeight.Bold,
                         color = Color(0xFF94A3B8)
                     )
                 }
@@ -1762,10 +1820,28 @@ private fun CompactReplyItem(
     isLast: Boolean,
     isExpanded: Boolean,
     onLike: () -> Unit,
-    onReply: () -> Unit
+    onReply: () -> Unit,
+    allUsers: List<User> = emptyList(),
+    currentUser: User? = null
 ) {
     var isTextExpanded by remember { mutableStateOf(false) }
     var hasOverflow by remember { mutableStateOf(false) }
+
+    val replyAuthorUser = remember(reply.author, allUsers, currentUser) {
+        val uId = if (reply.userId > 0L) reply.userId else reply.author.id
+        val matched = allUsers.find { it.id == uId }
+            ?: if (currentUser != null && currentUser.id == uId && currentUser.id > 0) currentUser else null
+        if (matched != null) {
+            val realName = matched.name.ifBlank { matched.username.removePrefix("@") }
+            reply.author.copy(
+                id = matched.id,
+                name = if (realName.isNotBlank() && !realName.startsWith("User")) realName else reply.author.name.ifBlank { realName },
+                username = matched.username.ifBlank { reply.author.username },
+                profileImageUrl = matched.profileImageUrl.ifBlank { reply.author.profileImageUrl },
+                isVerified = matched.isVerified || reply.author.isVerified
+            )
+        } else reply.author
+    }
 
     // Replying format:
     // Bold replyer's name, followed by the name of the person being replied to in normal text.
@@ -1821,10 +1897,10 @@ private fun CompactReplyItem(
     ) {
         // Replyer's profile picture (24.dp)
         FeatheredAvatar(
-            name = reply.author.name,
-            imageUrl = reply.author.profileImageUrl,
+            name = replyAuthorUser.name,
+            imageUrl = replyAuthorUser.profileImageUrl,
             size = 24.dp,
-            username = reply.author.username
+            username = replyAuthorUser.username
         )
 
         Spacer(modifier = Modifier.width(8.dp))
@@ -1849,25 +1925,25 @@ private fun CompactReplyItem(
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Text(
-                            text = reply.author.name,
+                            text = replyAuthorUser.name,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 14.5.sp,
+                            fontSize = 19.sp,
                             color = Color(0xFFF8FAFC)
                         )
                         // Verification tick appears right next to the user name
-                        if (reply.author.isVerified) {
-                            VerifiedBadge(size = 13.dp)
+                        if (replyAuthorUser.isVerified) {
+                            VerifiedBadge(size = 17.dp)
                         }
                         if (!targetUser.isNullOrBlank()) {
                             Text(
                                 text = "replied to",
-                                fontSize = 11.5.sp,
+                                fontSize = 13.sp,
                                 color = Color(0xFF64748B)
                             )
                             Text(
                                 text = targetUser,
                                 fontWeight = FontWeight.SemiBold,
-                                fontSize = 12.5.sp,
+                                fontSize = 14.sp,
                                 color = Color(0xFF93C5FD)
                             )
                         }
@@ -1875,16 +1951,16 @@ private fun CompactReplyItem(
 
                     Spacer(modifier = Modifier.height(2.dp))
 
-                    // Reply Text Row: same text size as comments (14.5.sp) with 'v' chevron to expand
+                    // Reply Text Row: 20sp text size matching comments with 'v' chevron to expand
                     Row(
                         verticalAlignment = Alignment.Bottom,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
                             text = cleanText,
-                            fontSize = 14.5.sp,
+                            fontSize = 20.sp,
                             color = Color(0xFFCBD5E1),
-                            lineHeight = 20.sp,
+                            lineHeight = 26.sp,
                             maxLines = if (isTextExpanded) Int.MAX_VALUE else 1,
                             overflow = TextOverflow.Ellipsis,
                             onTextLayout = { textLayoutResult ->

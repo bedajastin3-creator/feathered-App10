@@ -428,7 +428,6 @@ fun FeedScreen(
                                 onRequestAuth()
                             } else {
                                 discussionsSheetPost = post
-                                onCommentPost(post)
                             }
                         },
                         onShare = {
@@ -658,6 +657,7 @@ fun FeedScreen(
                 post = livePost,
                 currentUser = currentUser,
                 isFollowing = livePost.author.isFollowing,
+                allUsers = allUsers,
                 onFollowToggle = {
                     if (isGuest) {
                         discussionsSheetPost = null

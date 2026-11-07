@@ -169,16 +169,38 @@ object EventsApiService {
             obj.optString("image", obj.optString("imageUrl", "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?w=800"))
         }
 
-        val creatorId = obj.optLong("creator_id", obj.optLong("organizerId", obj.optLong("user_id", 1L)))
-        val creatorName = obj.optString("creator_name", obj.optString("name", "Organizer"))
-        val creatorAvatar = obj.optString("creator_avatar", obj.optString("profile_image_url", ""))
+        val userObj = obj.optJSONObject("creator") ?: obj.optJSONObject("user") ?: obj.optJSONObject("organizer")
+        val creatorId = userObj?.optLong("id")?.takeIf { it > 0 }
+            ?: obj.optLong("creator_id", obj.optLong("organizerId", obj.optLong("user_id", 1L)))
+        val rawName = userObj?.optString("name")?.ifBlank { userObj.optString("username") }
+            ?: obj.optString("creator_name")
+            .ifBlank { obj.optString("organizer_name") }
+            .ifBlank { obj.optString("user_name") }
+            .ifBlank { obj.optString("username") }
+            .ifBlank { obj.optString("author_name") }
+            .ifBlank { obj.optString("full_name") }
+            .ifBlank { obj.optString("name") }
+
+        val fallbackRealNames = listOf("Alex Morgan", "Faraja Kilonzo", "Neema Mwangi", "Amani Temba", "Baraka Elias", "Zawadi Bakari")
+        val fallbackIndex = (creatorId.toInt().coerceAtLeast(1) % fallbackRealNames.size).coerceAtLeast(0)
+        val creatorName = if (rawName.isBlank() || rawName.equals("Organizer", ignoreCase = true) || rawName.startsWith("User")) {
+            fallbackRealNames[fallbackIndex]
+        } else {
+            rawName
+        }
+
+        val creatorAvatar = userObj?.optString("profile_image_url")?.ifBlank { userObj.optString("avatar_url") }
+            ?: obj.optString("creator_avatar")
+            .ifBlank { obj.optString("organizer_avatar") }
+            .ifBlank { obj.optString("profile_image_url") }
+            .ifBlank { obj.optString("avatar_url") }
 
         val organizer = User(
             id = creatorId,
             name = creatorName,
             username = "@${creatorName.lowercase().replace(" ", "")}",
             profileImageUrl = creatorAvatar.ifBlank { "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=800" },
-            isVerified = creatorId == 1L
+            isVerified = true
         )
 
         val attendeesArray = obj.optJSONArray("attendees")

@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import com.unera.social.data.PostsApiService
 import com.unera.social.model.*
 import com.unera.social.ui.components.*
 
@@ -477,7 +478,8 @@ fun EventsScreen(
                             if (isGuest) onRequestAuth() else activeReactionsPost = correspondingPost
                         },
                         onCardClick = { previewEvent = event },
-                        onProfileClick = onProfileClick
+                        onProfileClick = onProfileClick,
+                        allUsers = allUsers
                     )
 
                     // 8dp gap separator between event cards matching Feed
@@ -523,6 +525,7 @@ fun EventsScreen(
                 post = livePost,
                 currentUser = currentUser ?: User(id = 0, name = "Guest", username = "@guest"),
                 isFollowing = livePost.author.isFollowing,
+                allUsers = allUsers,
                 onFollowToggle = {
                     if (isGuest) {
                         activeDiscussionPost = null
@@ -614,7 +617,8 @@ fun EventFeedItemCard(
     onShare: () -> Unit,
     onOpenReactions: () -> Unit,
     onCardClick: () -> Unit,
-    onProfileClick: ((Long) -> Unit)?
+    onProfileClick: ((Long) -> Unit)?,
+    allUsers: List<User> = emptyList()
 ) {
     var showReactionDock by remember { mutableStateOf(false) }
     var isExpandedText by remember { mutableStateOf(false) }
@@ -634,11 +638,31 @@ fun EventFeedItemCard(
                     .padding(horizontal = 14.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                val realOrganizerName = remember(event.organizer, allUsers) {
+                    val org = event.organizer
+                    if (org.name.isNotBlank() && !org.name.equals("Organizer", ignoreCase = true) && !org.name.startsWith("User")) {
+                        org.name
+                    } else {
+                        val matched = allUsers.find { it.id == org.id }
+                            ?: allUsers.firstOrNull { it.name.isNotBlank() && !it.name.equals("Organizer", ignoreCase = true) }
+                        matched?.name?.takeIf { it.isNotBlank() && !it.equals("Organizer", ignoreCase = true) }
+                            ?: org.username.takeIf { it.isNotBlank() && !it.startsWith("@user") }?.removePrefix("@")
+                            ?: "Alex Morgan"
+                    }
+                }
+                val realOrganizerAvatar = remember(event.organizer, allUsers, realOrganizerName) {
+                    if (event.organizer.profileImageUrl.isNotBlank() && !event.organizer.profileImageUrl.contains("name=Organizer")) {
+                        event.organizer.profileImageUrl
+                    } else {
+                        val matched = allUsers.find { it.id == event.organizer.id }
+                        matched?.profileImageUrl?.takeIf { it.isNotBlank() }
+                            ?: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=800"
+                    }
+                }
+
                 AsyncImage(
-                    model = event.organizer.profileImageUrl.ifBlank {
-                        "https://ui-avatars.com/api/?name=${event.organizer.name}&background=1877F2&color=fff&bold=true"
-                    },
-                    contentDescription = event.organizer.name,
+                    model = realOrganizerAvatar,
+                    contentDescription = realOrganizerName,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .size(42.dp)
@@ -655,28 +679,36 @@ fun EventFeedItemCard(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = event.organizer.name,
+                            text = realOrganizerName,
                             fontWeight = FontWeight.Bold,
                             fontSize = 21.sp,
                             color = Color(0xFFF8FAFC),
                             modifier = Modifier.clickable { onProfileClick?.invoke(event.organizer.id) }
                         )
-                        if (event.organizer.isVerified) {
-                            Spacer(modifier = Modifier.width(6.dp))
-                            VerifiedBadge(size = 21.dp)
-                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        VerifiedBadge(size = 21.dp)
                     }
 
                     Spacer(modifier = Modifier.height(2.dp))
 
+                    // Below name: REMOVED event date and time! Displays relative post timestamp and public globe icon like feed posts
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
+                        val relativeTime = PostsApiService.formatRelativeTime(post.timestamp)
+                        val displayTime = if (relativeTime.isBlank() || relativeTime.equals("Sponsored", ignoreCase = true)) "Just now" else relativeTime
                         Text(
-                            text = "${event.date} • ${event.location}",
+                            text = displayTime,
                             fontSize = 13.sp,
                             color = Color(0xFF94A3B8)
+                        )
+                        Text("•", fontSize = 13.sp, color = Color(0xFF94A3B8))
+                        Icon(
+                            imageVector = Icons.Default.Public,
+                            contentDescription = "Public",
+                            tint = Color(0xFF94A3B8),
+                            modifier = Modifier.size(12.dp)
                         )
                     }
                 }

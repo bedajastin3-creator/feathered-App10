@@ -309,10 +309,38 @@ class FeatheredViewModel(application: Application) : AndroidViewModel(applicatio
                     isFollowing = matchedUser.isFollowing || post.author.isFollowing,
                     followersCount = if (matchedUser.followersCount > 0) matchedUser.followersCount else post.author.followersCount
                 )
-                post.copy(author = author, userId = matchedUser.id)
+                val updatedEvent = post.event?.let { ev ->
+                    if (ev.organizer.name.isBlank() || ev.organizer.name.equals("Organizer", ignoreCase = true) || ev.organizer.id == author.id) {
+                        ev.copy(organizer = author)
+                    } else ev
+                }
+                post.copy(author = author, userId = matchedUser.id, event = updatedEvent)
             } else {
                 post
             }
+        }
+    }
+
+    private fun enrichEventsWithOrganizers(events: List<Event>, users: List<User>): List<Event> {
+        if (events.isEmpty() || users.isEmpty()) return events
+        val userMap = users.associateBy { it.id }
+        return events.map { ev ->
+            val matched = userMap[ev.organizer.id]
+                ?: if (ev.organizer.name.isBlank() || ev.organizer.name.equals("Organizer", ignoreCase = true)) {
+                    users.firstOrNull { it.name.isNotBlank() && !it.name.equals("Organizer", ignoreCase = true) }
+                } else null
+            if (matched != null) {
+                val realName = matched.name.ifBlank { matched.username.removePrefix("@") }
+                ev.copy(
+                    organizer = ev.organizer.copy(
+                        id = matched.id,
+                        name = if (realName.isNotBlank() && !realName.startsWith("User")) realName else ev.organizer.name.ifBlank { realName },
+                        username = if (matched.username.isNotBlank()) matched.username else ev.organizer.username,
+                        profileImageUrl = matched.profileImageUrl.ifBlank { ev.organizer.profileImageUrl },
+                        isVerified = matched.isVerified || ev.organizer.isVerified
+                    )
+                )
+            } else ev
         }
     }
 
@@ -465,8 +493,9 @@ class FeatheredViewModel(application: Application) : AndroidViewModel(applicatio
             val uid = if (_uiState.value.isLoggedIn && !_uiState.value.isGuest) _uiState.value.currentUser.id else null
             val liveEvents = EventsApiService.fetchLiveEvents(uid)
             if (liveEvents.isNotEmpty()) {
+                val enriched = enrichEventsWithOrganizers(liveEvents, _uiState.value.users)
                 _uiState.update { state ->
-                    state.copy(events = liveEvents)
+                    state.copy(events = enriched)
                 }
             }
         }
@@ -926,16 +955,18 @@ class FeatheredViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.update { state ->
             val updatedPosts = state.posts.map { p ->
                 if (p.id == postId) {
+                    val filtered = p.comments.filterNot { it.id == tempId || (it.id < 0 && it.text.trim() == newComment.text.trim() && it.author.id == author.id) }
                     p.copy(
-                        comments = listOf(newComment) + p.comments.filter { it.id != tempId },
+                        comments = listOf(newComment) + filtered,
                         commentsCount = p.commentsCount + 1
                     )
                 } else p
             }
             val updatedVideoPosts = state.videoPosts.map { p ->
                 if (p.id == postId) {
+                    val filtered = p.comments.filterNot { it.id == tempId || (it.id < 0 && it.text.trim() == newComment.text.trim() && it.author.id == author.id) }
                     p.copy(
-                        comments = listOf(newComment) + p.comments.filter { it.id != tempId },
+                        comments = listOf(newComment) + filtered,
                         commentsCount = p.commentsCount + 1
                     )
                 } else p
@@ -953,8 +984,10 @@ class FeatheredViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             } else state.products
             val updatedSel = if (state.selectedPostForComments?.id == postId) {
+                val existing = state.selectedPostForComments?.comments ?: emptyList()
+                val filtered = existing.filterNot { it.id == tempId || (it.id < 0 && it.text.trim() == newComment.text.trim() && it.author.id == author.id) }
                 state.selectedPostForComments?.copy(
-                    comments = listOf(newComment) + (state.selectedPostForComments?.comments?.filter { it.id != tempId } ?: emptyList()),
+                    comments = listOf(newComment) + filtered,
                     commentsCount = (state.selectedPostForComments?.commentsCount ?: 0) + 1
                 )
             } else state.selectedPostForComments

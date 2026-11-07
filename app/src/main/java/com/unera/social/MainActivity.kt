@@ -789,6 +789,7 @@ fun FeatheredApp(
             post = selectedPost,
             currentUser = uiState.currentUser,
             isFollowing = selectedPost.author.isFollowing,
+            allUsers = uiState.users,
             onFollowToggle = {
                 viewModel.toggleFollowUser(selectedPost.author.id)
             },
