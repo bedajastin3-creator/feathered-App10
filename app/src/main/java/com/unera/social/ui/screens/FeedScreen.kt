@@ -46,8 +46,10 @@ import coil.compose.AsyncImage
 import com.unera.social.data.MockData
 import com.unera.social.data.PostsApiService
 import com.unera.social.data.CommentsCache
+import com.unera.social.data.EventsApiService
 import com.unera.social.model.*
 import com.unera.social.ui.components.*
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 internal fun formatCount(count: Int): String {

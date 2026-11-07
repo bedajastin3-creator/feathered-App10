@@ -521,7 +521,7 @@ fun EventsScreen(
             val livePost = posts.find { it.id == curPost.id } ?: curPost
             DiscussionsSheetDialog(
                 post = livePost,
-                currentUser = currentUser ?: User(id = 0, name = "Guest"),
+                currentUser = currentUser ?: User(id = 0, name = "Guest", username = "@guest"),
                 isFollowing = livePost.author.isFollowing,
                 onFollowToggle = {
                     if (isGuest) {
@@ -547,7 +547,7 @@ fun EventsScreen(
                     }
                 },
                 onLikeComment = { _ -> },
-                onUserClick = { user ->
+                onProfileClick = { user ->
                     activeDiscussionPost = null
                     onProfileClick?.invoke(user.id)
                 }
