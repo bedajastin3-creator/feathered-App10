@@ -1778,20 +1778,20 @@ fun WebPostCard(
                                     Text(
                                         text = previewAuthor.name,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 14.5.sp,
+                                        fontSize = 19.sp,
                                         color = Color(0xFFF8FAFC)
                                     )
                                     if (previewAuthor.isVerified) {
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        VerifiedBadge(size = 14.dp)
+                                        Spacer(modifier = Modifier.width(5.dp))
+                                        VerifiedBadge(size = 17.dp)
                                     }
                                 }
 
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
                                     text = currentComment.text,
-                                    fontSize = 14.5.sp,
-                                    lineHeight = 20.sp,
+                                    fontSize = 20.sp,
+                                    lineHeight = 26.sp,
                                     color = Color(0xFFCBD5E1),
                                     maxLines = 3,
                                     overflow = TextOverflow.Ellipsis

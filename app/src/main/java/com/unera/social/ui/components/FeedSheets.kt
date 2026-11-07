@@ -58,6 +58,9 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.Canvas
 import androidx.compose.material.icons.automirrored.filled.Reply
 import kotlinx.coroutines.delay
@@ -500,155 +503,222 @@ fun ShareBottomSheetDialog(
     onCopyLink: () -> Unit
 ) {
     val context = LocalContext.current
+    val isVideo = post.postType == "video" || post.mediaType == "video" || !post.videoUrl.isNullOrBlank()
+
     Dialog(
-        onDismissRequest = onDismiss
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
     ) {
-        Card(
+        // Scrim over the whole screen (covers bottom navigation and status/nav bars), clicking outside dismisses
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(20.dp))
-                .testTag("share_bottom_sheet_dialog"),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF0B1120)),
-            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E293B))
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.55f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onDismiss
+                ),
+            contentAlignment = Alignment.BottomCenter
         ) {
-            Column(modifier = Modifier.padding(18.dp)) {
-                // Drag handle bar
-                Box(
+            // Floating bottom sheet Card occupying 100% width and ~42-52% height
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(if (isVideo) 0.54f else 0.48f)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { /* intercept clicks inside card to prevent dismiss */ }
+                    .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                    .testTag("share_bottom_sheet_dialog"),
+                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E293B))
+            ) {
+                Column(
                     modifier = Modifier
-                        .size(40.dp, 4.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(Color(0xFF334155))
-                        .align(Alignment.CenterHorizontally)
-                )
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Post Mini Preview Card
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFF1E293B))
-                        .padding(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .fillMaxSize()
+                        .padding(horizontal = 20.dp, vertical = 14.dp)
                 ) {
-                    if (!post.mediaUrl.isNullOrBlank()) {
-                        AsyncImage(
-                            model = post.mediaUrl,
-                            contentDescription = "Post preview",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                    } else {
-                        FeatheredAvatar(
-                            name = post.author.name,
-                            imageUrl = post.author.profileImageUrl,
-                            size = 44.dp,
-                            username = post.author.username
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                    }
-                    Column(modifier = Modifier.weight(1f)) {
+                    // Drag handle bar
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp, 4.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(Color(0xFF475569))
+                            .align(Alignment.CenterHorizontally)
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Header with title and close button
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
                         Text(
-                            text = post.author.name,
+                            text = "Share",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
+                            fontSize = 18.sp,
                             color = Color(0xFFF8FAFC)
                         )
-                        Text(
-                            text = post.content.ifBlank { "Shared post" },
-                            fontSize = 12.sp,
-                            color = Color(0xFF94A3B8),
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Option: Share to Feed
-                ShareOptionRow(
-                    icon = Icons.Default.Newspaper,
-                    iconTint = Color(0xFF1877F2),
-                    iconBg = Color(0xFF1877F2).copy(alpha = 0.15f),
-                    title = "Share to Feed / Profile",
-                    subtitle = "Share to your profile & public feed",
-                    onClick = onShareToFeed
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Option: Share to Groups
-                ShareOptionRow(
-                    icon = Icons.Default.Groups,
-                    iconTint = Color(0xFF45BD62),
-                    iconBg = Color(0xFF45BD62).copy(alpha = 0.15f),
-                    title = "Share to Groups & Brands",
-                    subtitle = "Share with your groups & communities",
-                    onClick = onShareToGroup
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Option: Send as Message
-                ShareOptionRow(
-                    icon = Icons.Default.ChatBubble,
-                    iconTint = Color(0xFF1877F2),
-                    iconBg = Color(0xFF1877F2).copy(alpha = 0.15f),
-                    title = "Send as a Message",
-                    subtitle = "Share via direct message",
-                    onClick = onSendMessage
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Option: Copy Post Link
-                ShareOptionRow(
-                    icon = Icons.Default.Link,
-                    iconTint = Color(0xFF1877F2),
-                    iconBg = Color(0xFF1877F2).copy(alpha = 0.15f),
-                    title = "Copy Post Link",
-                    subtitle = "https://featheredsocial.site/post/${post.id}",
-                    onClick = onCopyLink
-                )
-
-                // Option: Download Original (Slot 0 untouch upload for videos)
-                val isVideo = post.postType == "video" || post.mediaType == "video" || !post.videoUrl.isNullOrBlank()
-                if (isVideo) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    ShareOptionRow(
-                        icon = Icons.Default.Download,
-                        iconTint = Color(0xFF38BDF8),
-                        iconBg = Color(0xFF38BDF8).copy(alpha = 0.15f),
-                        title = "Download Original Video",
-                        subtitle = "Full untouched original upload",
-                        onClick = {
-                            val downloadUrl = post.getOriginalDownloadUrl()
-                            try {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl))
-                                context.startActivity(intent)
-                                Toast.makeText(context, "Opening original download...", Toast.LENGTH_SHORT).show()
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Unable to open download", Toast.LENGTH_SHORT).show()
-                            }
-                            onDismiss()
+                        IconButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close",
+                                tint = Color(0xFF94A3B8),
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
-                    )
-                }
+                    }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                Button(
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B))
-                ) {
-                    Text(text = "Cancel", color = Color(0xFFF8FAFC), fontWeight = FontWeight.Bold)
+                    // Scrollable container for post preview & options
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        // Post Mini Preview Card
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xFF1E293B))
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (!post.mediaUrl.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = post.mediaUrl,
+                                    contentDescription = "Post preview",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                            } else {
+                                FeatheredAvatar(
+                                    name = post.author.name,
+                                    imageUrl = post.author.profileImageUrl,
+                                    size = 44.dp,
+                                    username = post.author.username
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = post.author.name,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = Color(0xFFF8FAFC)
+                                )
+                                Text(
+                                    text = post.content.ifBlank { "Shared post" },
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF94A3B8),
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // Option: Share to Feed
+                        ShareOptionRow(
+                            icon = Icons.Default.Newspaper,
+                            iconTint = Color(0xFF1877F2),
+                            iconBg = Color(0xFF1877F2).copy(alpha = 0.15f),
+                            title = "Share to Feed / Profile",
+                            subtitle = "Share to your profile & public feed",
+                            onClick = onShareToFeed
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Option: Share to Groups
+                        ShareOptionRow(
+                            icon = Icons.Default.Groups,
+                            iconTint = Color(0xFF45BD62),
+                            iconBg = Color(0xFF45BD62).copy(alpha = 0.15f),
+                            title = "Share to Groups & Brands",
+                            subtitle = "Share with your groups & communities",
+                            onClick = onShareToGroup
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Option: Send as Message
+                        ShareOptionRow(
+                            icon = Icons.Default.ChatBubble,
+                            iconTint = Color(0xFF1877F2),
+                            iconBg = Color(0xFF1877F2).copy(alpha = 0.15f),
+                            title = "Send as a Message",
+                            subtitle = "Share via direct message",
+                            onClick = onSendMessage
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Option: Copy Post Link
+                        ShareOptionRow(
+                            icon = Icons.Default.Link,
+                            iconTint = Color(0xFF1877F2),
+                            iconBg = Color(0xFF1877F2).copy(alpha = 0.15f),
+                            title = "Copy Post Link",
+                            subtitle = "https://featheredsocial.site/post/${post.id}",
+                            onClick = onCopyLink
+                        )
+
+                        // Option: Download Original (Slot 0 untouch upload for videos)
+                        if (isVideo) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            ShareOptionRow(
+                                icon = Icons.Default.Download,
+                                iconTint = Color(0xFF38BDF8),
+                                iconBg = Color(0xFF38BDF8).copy(alpha = 0.15f),
+                                title = "Download Original Video",
+                                subtitle = "Full untouched original upload",
+                                onClick = {
+                                    val downloadUrl = post.getOriginalDownloadUrl()
+                                    try {
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl))
+                                        context.startActivity(intent)
+                                        Toast.makeText(context, "Opening original download...", Toast.LENGTH_SHORT).show()
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "Unable to open download", Toast.LENGTH_SHORT).show()
+                                    }
+                                    onDismiss()
+                                }
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B))
+                    ) {
+                        Text(text = "Cancel", color = Color(0xFFF8FAFC), fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
